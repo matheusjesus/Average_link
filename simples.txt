@@ -1,0 +1,11 @@
+sample_label	d1	d2
+nome1	1.0	1.0
+nome2	1.5	1.0
+nome3	1.0	1.5
+nome4	3.0	3.0
+nome5	3.5	3.0
+nome6	3.0	3.5
+nome7	5	5.5
+nome8	5	5
+nome9	5.5	5
+nome10	2.5	7.5
