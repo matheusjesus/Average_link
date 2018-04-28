@@ -4,6 +4,8 @@
 #include <math.h>
 #include <time.h>
 
+#define TAM_MAX_LINHA 10000
+
 typedef struct elemento{
 	char nome[50];
 	float *coord;
@@ -32,31 +34,40 @@ typedef struct distancias{
 	float *distancia;
 } Distancias;
 
-int le_arquivo(char *arquivo, Elemento *el, int n_linhas);
+
+
+int le_arquivo(char *arquivo, Elemento *el);
 
 int conta_linhas(char *arquivo);
 
-Retorno cria_matriz(float **matriz, int tam, Elemento *el, int num_coord);
+Retorno cria_matriz(float **matriz, Elemento *el);
 
-float calc_dist(Elemento el1, Elemento el2, int num_coord);
+float calc_dist(Elemento el1, Elemento el2);
 
-void merge(int *menor, float **matriz, int num_el, Elemento *el, Clusters *clus, int num_coord);
+void merge(int *menor, float **matriz, Elemento *el, Clusters *clus);
 
-void exibe_clusters(Clusters clus, int num_coord);
+void recalcula_dist(float **matriz, Elemento *el, int id, Clusters *clus);
 
-void recalcula_dist(float **matriz, int tam, Elemento *el, int id, Clusters *clus, int num_coord);
+Retorno pega_menor(float **matriz);
 
-void exibe_matriz(float **matriz, int tam);
+void salvar(Elemento *el, char *nome_arquivo);
 
-Retorno pega_menor(float **matriz, int tam);
+void salvar_clusters(Clusters clus, char *nome_arquivo);
 
-void exibe_elementos(Elemento *el, int tam, int num_coord);
+//Funcoes para debug:
+void exibe_matriz(float **matriz);
 
-void salvar(Elemento *el, int tam, char *nome_arquivo);
+void exibe_clusters(Clusters clus);
 
-int main(int argc, char *argv[]){
-	int kmin, kmax, num_el, num_coord, tam_nome, primeiro = 1, exibir =0, passo, porcentagem = 0, nmaxclu = 0, i;
-	char *ptr, nome_arquivo[100], nomeaux[100], semresult[10000];
+void exibe_elementos(Elemento *el);
+
+
+int num_el;
+int num_coord;
+
+int main(){
+	int kmin, kmax, tam_nome, primeiro = 1, exibir =0, passo, porcentagem = 0, nmaxclu = 0, i, salvar_clu;
+	char *ptr, nome_arquivo[100], nomeaux[100], semresult[50], nome_salvar[100];
 	float **matriz;
 	double time_spent;
 	Clusters clus;
@@ -65,30 +76,29 @@ int main(int argc, char *argv[]){
 	clock_t begin = clock();
 	clock_t end;
 	
-	if(argc != 4){
-		printf("Numero incorreto de argumentos.\n");
-		return 0;
-	}
-
 	memset(nome_arquivo, '\0', 100);
 	memset(nomeaux, '\0', 100);
-	memset(semresult, '\0', 10000);
+	memset(semresult, '\0', 50);
 
-	kmin = strtol(argv[2], &ptr, 10);
-	kmax = strtol(argv[3], &ptr, 10);
+	printf("Entre com o Kmin: "); scanf("%d", &kmin);
+	printf("Entre com o Kmax: "); scanf("%d", &kmax);
+	printf("Entre com o nome do arquivo: "); scanf("%s", nome_arquivo);
 
 	if(kmin > kmax){
 		printf("Entrada invalida!");
 		return 0;
 	}
-
 	
-	num_el = conta_linhas(argv[1]);
+	num_el = conta_linhas(nome_arquivo);
 	if(num_el == -1){
 		printf("Erro ao abrir arquivo!\n");
 		return 0;
 	}
 
+	printf("Gostaria de salvar os resultados agrupados por cluster? Digite 0 para nao, 1 para sim: ");	scanf("%d", &salvar_clu);
+	while(salvar_clu != 0 && salvar_clu != 1){
+		printf("\nEntrada invalida!\nGostaria de salvar os resultados agrupados por cluster? Digite 0 para nao, 1 para sim: ");	scanf("%d", &salvar_clu);
+	}
 
 	printf("Numero de elementos: %d\n\n", num_el);
 
@@ -99,16 +109,16 @@ int main(int argc, char *argv[]){
 	clus.total_elementos = 0;
 	clus.c = (Cluster *) malloc(num_el * sizeof(Cluster));
 	
-	num_coord = le_arquivo(argv[1], el, num_el);
+	num_coord = le_arquivo(nome_arquivo, el);
 	if(num_coord == -1){
 		printf("Erro ao abrir o arquivo!\n");
 		return 0;
 	}
 
-	ret = cria_matriz(matriz, num_el, el, num_coord);
+	ret = cria_matriz(matriz, el);
 	matriz = ret.matriz;
 
-	merge(ret.menor, matriz, num_el, el, &clus, num_coord);
+	merge(ret.menor, matriz, el, &clus);
 
 	if(num_el > 20){
 		passo = (int) ceil(num_el / 20);
@@ -117,7 +127,7 @@ int main(int argc, char *argv[]){
 	}
 
 	while(1){
-		ret = pega_menor(matriz, num_el);
+		ret = pega_menor(matriz);
 
 		if(ret.menor[0] < 0){
 			sprintf(semresult, "Nao ha resultados para k >= %d.\n", nmaxclu);
@@ -128,7 +138,7 @@ int main(int argc, char *argv[]){
 			printf("Rodando.\n");
 		}
 
-		merge(ret.menor, matriz, num_el, el, &clus, num_coord);
+		merge(ret.menor, matriz, el, &clus);
 
 		if(clus.qt_clusters > nmaxclu){
 			nmaxclu = clus.qt_clusters;
@@ -136,11 +146,16 @@ int main(int argc, char *argv[]){
 
 		if(clus.total_elementos == num_el){
 			if(clus.qt_clusters <= kmax && clus.qt_clusters >= kmin){
-				tam_nome = strlen(argv[1]);
-				strncpy(nomeaux, argv[1], tam_nome-4);
+				tam_nome = strlen(nome_arquivo);
+				strncpy(nomeaux, nome_arquivo, tam_nome-4);
 				fflush(stdout);
-				sprintf(nome_arquivo, "Resultados_%s_%d.clu", nomeaux, clus.qt_clusters);
-				salvar(el, num_el, nome_arquivo);
+				sprintf(nome_salvar, "Resultados_%s_%d.clu", nomeaux, clus.qt_clusters);
+				salvar(el, nome_salvar);
+
+				sprintf(nome_salvar, "Clusters_%d_%s.txt", clus.qt_clusters, nomeaux);
+				if(salvar_clu){
+					salvar_clusters(clus, nome_salvar);
+				}
 
 				if(primeiro == 1 && clus.qt_clusters < kmax){
 					sprintf(semresult, "Nao ha resultados para k >= %d.\n", clus.qt_clusters);
@@ -174,14 +189,14 @@ int main(int argc, char *argv[]){
 		printf("A resposta foi salva nos arquivos!\nTempo de execucao: %lf segundos\n\n", time_spent);
 	}
 
-	printf("Gostaria de exibir os resultados agrupados por cluster? Digite 0 para nao, 1 para sim: ");	scanf("%d", &exibir);
+/*	printf("Gostaria de exibir os resultados agrupados por cluster? Digite 0 para nao, 1 para sim: ");	scanf("%d", &exibir);
 	while(exibir != 0 && exibir != 1){
 		printf("\nEntrada invalida!\nGostaria de exibir os resultados agrupados por cluster? Digite 0 para nao, 1 para sim: ");	scanf("%d", &exibir);
 	}
 
 	if(exibir){
-		exibe_clusters(clus, num_coord);
-	}
+		exibe_clusters(clus);
+	}*/
 
 	free(el);
 	for(i=0;i<clus.qt_clusters;i++){
@@ -194,10 +209,9 @@ int main(int argc, char *argv[]){
 	free(matriz);
 }
 
-
-int le_arquivo(char *arquivo, Elemento *el, int n_linhas){
-	int i, num_coord;
-	char linha[1000], *token, conteudo[25];
+int le_arquivo(char *arquivo, Elemento *el){
+	int i, num_coord=0, j;
+	char linha[TAM_MAX_LINHA], *token, conteudo[25];
 	FILE *f;
 	
 	f = fopen(arquivo, "r");
@@ -205,34 +219,32 @@ int le_arquivo(char *arquivo, Elemento *el, int n_linhas){
 		printf("Erro ao abrir o arquivo!\n\n");
 		return -1;
 	}
+	fgets(linha, TAM_MAX_LINHA, f); //pula primeira linha de nomes
 	
-	fgets(linha, 1000, f);
-	
-	for(i=0;i<n_linhas;i++){
-		memset(linha, '\0', 1000);
+	//conta o numero de coordenadas/atributos que os elementos possuem
+	fgets(linha, TAM_MAX_LINHA, f);
+	for(i=0;linha[i] != '\n';i++){
+		if(linha[i] == '\t'){
+			num_coord++;
+		}
+	}
+   	fseek(f, 0, SEEK_SET);
 
-		num_coord = 1;
-		
-		fgets(linha, 1000, f);
+	fgets(linha, TAM_MAX_LINHA, f); //pula primeira linha de nomes
+	//copia os elementos dos arquivos pra el
+	for(i=0;i<num_el;i++){
+		memset(linha, '\0', TAM_MAX_LINHA);
+
+		fgets(linha, TAM_MAX_LINHA, f);
 		
 		token = strtok(linha, "\t");
 		strcpy(el[i].nome, token);
 
-		token = strtok(NULL, "\t");
-		strcpy(conteudo, token);
 		el[i].coord = (float *) malloc(num_coord * sizeof(float));
-		el[i].coord[0] = (float) strtod(conteudo, NULL);
-		
-		token = strtok(NULL, "\t");
-		while(token != NULL){
-			num_coord++;
-			strcpy(conteudo, token);
-
-			el[i].coord = (float *) realloc(el[i].coord, num_coord * sizeof(float));
-			el[i].coord[num_coord-1] = (float) strtod(conteudo,NULL);
-
-
+		for(j=0;j<num_coord;j++){
 			token = strtok(NULL, "\t");
+			strcpy(conteudo, token);
+			el[i].coord[j] = (float) strtod(conteudo, NULL);
 		}
 		
 		el[i].cluster = -1;
@@ -263,22 +275,22 @@ int conta_linhas(char *arquivo){
 	return linhas - 1;		//-1 pra nao contar a primeira dos nomes
 }
 
-Retorno cria_matriz(float **matriz, int tam, Elemento *el, int num_coord){
+Retorno cria_matriz(float **matriz, Elemento *el){
 	int i, j;
 	float menor;
 	Retorno ret;
 	
-	matriz = (float**) malloc(tam * sizeof(float*));
-	for(i = 0; i < tam; i++){
-		matriz[i] = (float *) malloc(tam * sizeof(float));
+	matriz = (float**) malloc(num_el * sizeof(float*));
+	for(i = 0; i < num_el; i++){
+		matriz[i] = (float *) malloc(num_el * sizeof(float));
 	}
 	
-	menor = calc_dist(el[1], el[0], num_coord);
+	menor = calc_dist(el[1], el[0]);
 	ret.menor[0] = 1;
 	ret.menor[1] = 0;
 	
-	for(i=0;i<tam;i++){
-		for(j=0;j<tam;j++){
+	for(i=0;i<num_el;i++){
+		for(j=0;j<num_el;j++){
 			if(j > i){
 				matriz[i][j] = -1;
 			}
@@ -286,7 +298,7 @@ Retorno cria_matriz(float **matriz, int tam, Elemento *el, int num_coord){
 				matriz[i][j] = 0;
 			}
 			else{			
-				matriz[i][j] = calc_dist(el[i], el[j], num_coord);
+				matriz[i][j] = calc_dist(el[i], el[j]);
 				if(matriz[i][j] < menor){
 					ret.menor[0] = i;
 					ret.menor[1] = j;
@@ -302,7 +314,7 @@ Retorno cria_matriz(float **matriz, int tam, Elemento *el, int num_coord){
 	return ret;
 }
 
-float calc_dist(Elemento el1, Elemento el2, int num_coord){
+float calc_dist(Elemento el1, Elemento el2){
 	int i;
 	float soma = 0;
 
@@ -313,7 +325,7 @@ float calc_dist(Elemento el1, Elemento el2, int num_coord){
 	return sqrt(soma);
 }
 
-void merge(int *menor, float **matriz, int num_el, Elemento *el, Clusters *clus, int num_coord){
+void merge(int *menor, float **matriz, Elemento *el, Clusters *clus){
 	int i, j, k, l, qt, teste, id, idaux;
 	Elemento **aux;
 	
@@ -334,7 +346,7 @@ void merge(int *menor, float **matriz, int num_el, Elemento *el, Clusters *clus,
 		
 		
 		clus->qt_clusters++;
-		recalcula_dist(matriz, num_el, el, qt, clus, num_coord);
+		recalcula_dist(matriz, el, qt, clus);
 
 		clus->total_elementos = clus->total_elementos + 2;
 	}
@@ -356,7 +368,7 @@ void merge(int *menor, float **matriz, int num_el, Elemento *el, Clusters *clus,
 		clus->c[id].qt_elementos++;
 		
 		clus->total_elementos++;
-		recalcula_dist(matriz, num_el, el, id, clus, num_coord);		
+		recalcula_dist(matriz, el, id, clus);		
 	}
 	else if(el[i].cluster == -1 && el[j].cluster != -1){
 		//SIGNIFICA QUE O ELEMENTO j PERTENCE A UM CLUSTER, MAS i NÃO
@@ -375,7 +387,7 @@ void merge(int *menor, float **matriz, int num_el, Elemento *el, Clusters *clus,
 		clus->c[id].qt_elementos++;
 		
 		clus->total_elementos++;
-		recalcula_dist(matriz, num_el, el, id, clus, num_coord);
+		recalcula_dist(matriz, el, id, clus);
 	}
 	else{
 		//OS DOIS PERTENCEM A UM CLUSTER, FUSÃO DE CLUSTERS!
@@ -389,38 +401,39 @@ void merge(int *menor, float **matriz, int num_el, Elemento *el, Clusters *clus,
 			id = el[j].cluster;
 			idaux = el[i].cluster;
 		}
-			//copiando elementos do cluster de j para o de i:
-			aux = (Elemento **) malloc((clus->c[id].qt_elementos + clus->c[idaux].qt_elementos) * sizeof(Elemento*));
-			for(k=0;k<clus->c[id].qt_elementos;k++){
-				aux[k] = clus->c[id].elem[k];
-			}
+		
+		//copiando elementos do cluster de j para o de i:
+		aux = (Elemento **) malloc((clus->c[id].qt_elementos + clus->c[idaux].qt_elementos) * sizeof(Elemento*));
+		for(k=0;k<clus->c[id].qt_elementos;k++){
+			aux[k] = clus->c[id].elem[k];
+		}
 			
-			free(clus->c[id].elem);
-			clus->c[id].elem = aux;
+		free(clus->c[id].elem);
+		clus->c[id].elem = aux;
 			
-			for(k=0;k<clus->c[idaux].qt_elementos;k++){
-				clus->c[id].elem[clus->c[id].qt_elementos] = clus->c[idaux].elem[k];
-				clus->c[id].elem[clus->c[id].qt_elementos]->cluster = id;
+		for(k=0;k<clus->c[idaux].qt_elementos;k++){
+			clus->c[id].elem[clus->c[id].qt_elementos] = clus->c[idaux].elem[k];
+			clus->c[id].elem[clus->c[id].qt_elementos]->cluster = id;
 				
-				clus->c[id].qt_elementos++;
-			}
+			clus->c[id].qt_elementos++;
+		}
 			
-			//apagando o cluster de j, dando shift e renomeando todos os clusters depois dele:
-			for(k=idaux;k<clus->qt_clusters-1;k++){
-				clus->c[k] = clus->c[k+1];
-				for(l=0;l<clus->c[k].qt_elementos;l++){
-					clus->c[k].elem[l]->cluster--;
-				}
+		//apagando o cluster de j, dando shift e renomeando todos os clusters depois dele:
+		for(k=idaux;k<clus->qt_clusters-1;k++){
+			clus->c[k] = clus->c[k+1];
+			for(l=0;l<clus->c[k].qt_elementos;l++){
+				clus->c[k].elem[l]->cluster--;
 			}
-			clus->c[k].elem = NULL;
-			clus->qt_clusters--;
+			clus->c[k].id--;
+		}
+		clus->c[k].elem = NULL;
+		clus->qt_clusters--;
 			
-			recalcula_dist(matriz, num_el, el, id, clus, num_coord);
+		recalcula_dist(matriz, el, id, clus);
 	}
 }
 
-
-void recalcula_dist(float **matriz, int tam, Elemento *el, int id, Clusters *clus, int num_coord){
+void recalcula_dist(float **matriz, Elemento *el, int id, Clusters *clus){
 	int i, j, k, l, teste, icluster, jcluster;
 	float soma;
 	Distancias *dists;
@@ -435,8 +448,8 @@ void recalcula_dist(float **matriz, int tam, Elemento *el, int id, Clusters *clu
 		dists[i].distancia[i] = 0;
 	}
 	
-	for(i=0;i<tam;i++){
-		for(j=0;j<tam;j++){
+	for(i=0;i<num_el;i++){
+		for(j=0;j<num_el;j++){
 			//só faz as contas para as iteracoes que nos interessam (sem repeticao, sem contar dist 0)
 			if(j < i){
 				if(matriz[i][j] == -2){
@@ -447,7 +460,7 @@ void recalcula_dist(float **matriz, int tam, Elemento *el, int id, Clusters *clu
 				else if(el[i].cluster == id && el[j].cluster == -1){
 					soma = 0;
 					for(k=0;k<clus->c[id].qt_elementos;k++){
-						soma = soma + calc_dist(*(clus->c[id].elem[k]), el[j], num_coord);
+						soma = soma + calc_dist(*(clus->c[id].elem[k]), el[j]);
 					}
 					soma = soma / clus->c[id].qt_elementos;
 						
@@ -457,7 +470,7 @@ void recalcula_dist(float **matriz, int tam, Elemento *el, int id, Clusters *clu
 				else if(el[i].cluster == -1 && el[j].cluster == id){
 					soma = 0;
 					for(k=0;k<clus->c[id].qt_elementos;k++){
-						soma = soma + calc_dist(*(clus->c[id].elem[k]), el[i], num_coord);
+						soma = soma + calc_dist(*(clus->c[id].elem[k]), el[i]);
 					}
 					soma = soma / clus->c[id].qt_elementos;
 						
@@ -477,7 +490,7 @@ void recalcula_dist(float **matriz, int tam, Elemento *el, int id, Clusters *clu
 						soma = 0;
 						for(k=0;k<clus->c[id].qt_elementos;k++){
 							for(l = 0;l<clus->c[el[j].cluster].qt_elementos;l++){
-								soma = soma + calc_dist(*(clus->c[id].elem[k]), *(clus->c[el[j].cluster].elem[l]), num_coord);
+								soma = soma + calc_dist(*(clus->c[id].elem[k]), *(clus->c[el[j].cluster].elem[l]));
 							}
 						}
 						
@@ -501,7 +514,7 @@ void recalcula_dist(float **matriz, int tam, Elemento *el, int id, Clusters *clu
 						soma = 0;
 						for(k=0;k<clus->c[id].qt_elementos;k++){
 							for(l = 0;l<clus->c[el[i].cluster].qt_elementos;l++){
-								soma = soma + calc_dist(*(clus->c[id].elem[k]), *(clus->c[el[i].cluster].elem[l]), num_coord);
+								soma = soma + calc_dist(*(clus->c[id].elem[k]), *(clus->c[el[i].cluster].elem[l]));
 							}
 						}
 					
@@ -527,56 +540,14 @@ void recalcula_dist(float **matriz, int tam, Elemento *el, int id, Clusters *clu
 	free(dists);
 }
 
-void exibe_clusters(Clusters clus, int num_coord){
-	int i, j, k;
-	
-	printf("\n\n\n********************************\nqt clusters: %d\n\n", clus.qt_clusters);
-	
-	for(i=0;i<clus.qt_clusters;i++){
-		printf("cluster id: %d\nqt_elementos: %d\n", clus.c[i].id, clus.c[i].qt_elementos);
-		printf("\n");
-		for(j=0;j<clus.c[i].qt_elementos;j++){
-			printf("nome: %s\n", clus.c[i].elem[j]->nome);
-			for(k=0;k<num_coord;k++){
-				printf("coordenada %d: %f\t", k+1, clus.c[i].elem[j]->coord[k]);
-			}
-			printf("\ncluster: %d\n\n", clus.c[i].elem[j]->cluster);
-		}
-	}
-}
-
-void exibe_matriz(float **matriz, int tam){
-	//print da matriz pra teste:
-	int i, j;
-	for(i=0;i<tam;i++){
-		for(j=0;j<tam;j++){
-			printf("%f\t", matriz[i][j]);
-		}
-		printf("\n");
-	}
-}
-
-void exibe_elementos(Elemento *el, int tam, int num_coord){
-	//print dos elementos pra teste:
-	int i, j;
-	for(i=0;i<tam;i++){
-		printf("nome: %s\n", el[i].nome);
-		for(j=0;j<num_coord;j++){
-			printf("coordenada %d: %f\t", j+1, el[i].coord[j]);
-		}
-		printf("\ncluster: %d\n\n", el[i].cluster);
-	}
-}
-
-
-Retorno pega_menor(float **matriz, int tam){
+Retorno pega_menor(float **matriz){
 	int i, j, teste, flag = 0;
 	float menor;
 	Retorno ret;
 	
 
-	for(i=0;i<tam;i++){
-		for(j=0;j<tam;j++){
+	for(i=0;i<num_el;i++){
+		for(j=0;j<num_el;j++){
 			if(matriz[i][j] > 0){
 				if(flag == 0){
 					menor = matriz[i][j];
@@ -603,15 +574,78 @@ Retorno pega_menor(float **matriz, int tam){
 	return ret;
 }
 
-void salvar(Elemento *el, int tam, char *nome_arquivo) {
+void salvar(Elemento *el, char *nome_arquivo) {
 	int i;
 	FILE *arquivo;
 
 	arquivo = fopen(nome_arquivo, "w"); //cria novo arquivo
 
-	for(i=0;i<tam;i++){       //para cada cluster
+	for(i=0;i<num_el;i++){       //para cada cluster
 		fprintf(arquivo,"%s\t%d\n", el[i].nome, el[i].cluster); //escreve registros
 	}
     
 	fclose(arquivo);
+}
+
+void salvar_clusters(Clusters clus, char *nome_arquivo){
+	int i, j, k;
+	FILE *arquivo;
+
+	arquivo = fopen(nome_arquivo, "w");
+	
+	fprintf(arquivo, "Quantidade de clusters: %d", clus.qt_clusters);
+	
+	for(i=0;i<clus.qt_clusters;i++){
+		fprintf(arquivo, "\n\n**************************************\nCluster id: %d\nQuantidade de elementos: %d", clus.c[i].id, clus.c[i].qt_elementos);
+		for(j=0;j<clus.c[i].qt_elementos;j++){
+			fprintf(arquivo, "\n\nnome: %s\n", clus.c[i].elem[j]->nome);
+			fprintf(arquivo, "cluster: %d\n", clus.c[i].elem[j]->cluster);
+
+			fprintf(arquivo, "coordenada %d: %f", 0+1, clus.c[i].elem[j]->coord[0]);
+			for(k=1;k<num_coord;k++){
+				fprintf(arquivo, "          coordenada %d: %f", k+1, clus.c[i].elem[j]->coord[k]);
+			}
+		}
+	}
+}
+
+
+//Funcoes utilizadas para debug
+void exibe_clusters(Clusters clus){
+	int i, j, k;
+	
+	printf("\n\n\n********************************\nquantidade de clusters: %d\n\n", clus.qt_clusters);
+	
+	for(i=0;i<clus.qt_clusters;i++){
+		printf("*******************\ncluster id: %d\nqt_elementos: %d\n", clus.c[i].id, clus.c[i].qt_elementos);
+		printf("\n");
+		for(j=0;j<clus.c[i].qt_elementos;j++){
+			printf("nome: %s\n", clus.c[i].elem[j]->nome);
+			for(k=0;k<num_coord;k++){
+				printf("coordenada %d: %f          ", k+1, clus.c[i].elem[j]->coord[k]);
+			}
+			printf("\ncluster: %d\n\n", clus.c[i].elem[j]->cluster);
+		}
+	}
+}
+
+void exibe_matriz(float **matriz){
+	int i, j;
+	for(i=0;i<num_el;i++){
+		for(j=0;j<num_el;j++){
+			printf("%f\t", matriz[i][j]);
+		}
+		printf("\n");
+	}
+}
+
+void exibe_elementos(Elemento *el){
+	int i, j;
+	for(i=0;i<num_el;i++){
+		printf("nome: %s\n", el[i].nome);
+		for(j=0;j<num_coord;j++){
+			printf("coordenada %d: %f\t", j+1, el[i].coord[j]);
+		}
+		printf("\ncluster: %d\n\n", el[i].cluster);
+	}
 }
